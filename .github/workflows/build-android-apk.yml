@@ -49,10 +49,39 @@ jobs:
 
       - name: Ensure gradle wrapper exists
         run: |
-          if [ ! -f android/gradlew ]; then
-            (cd android && gradle wrapper --gradle-version 8.7)
+          set -e
+          if [ -f android/gradlew ]; then
+            echo "gradlew already present, skip"
+            chmod +x android/gradlew
+            exit 0
           fi
-          chmod +x android/gradlew || true
+
+          # Pin a Gradle 8.x binary: the runner default (9.x) cannot compile
+          # Flutter 3.24.x's gradle plugin (groovy.xml.QName was removed in Groovy 4).
+          GRADLE_BIN=""
+          if command -v gradle >/dev/null 2>&1; then
+            GV="$(gradle --version 2>/dev/null | awk '/^Gradle /{print $2}')"
+            case "$GV" in
+              8.*) GRADLE_BIN="$(command -v gradle)" ;;
+            esac
+          fi
+          if [ -z "$GRADLE_BIN" ]; then
+            curl -fsSL -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
+            unzip -q /tmp/gradle.zip -d /tmp
+            GRADLE_BIN="/tmp/gradle-8.7/bin/gradle"
+          fi
+          echo "wrapper generator: $GRADLE_BIN"
+          "$GRADLE_BIN" --version | head -n 4
+
+          # Generate the wrapper in an EMPTY dir so no project settings get evaluated.
+          rm -rf /tmp/wrapgen && mkdir -p /tmp/wrapgen
+          ( cd /tmp/wrapgen && "$GRADLE_BIN" wrapper --gradle-version 8.7 --distribution-type bin --no-daemon )
+
+          cp -r /tmp/wrapgen/gradle "$GITHUB_WORKSPACE/android/"
+          cp /tmp/wrapgen/gradlew /tmp/wrapgen/gradlew.bat "$GITHUB_WORKSPACE/android/"
+          chmod +x "$GITHUB_WORKSPACE/android/gradlew"
+          echo "--- wrapper properties ---"
+          cat "$GITHUB_WORKSPACE/android/gradle/wrapper/gradle-wrapper.properties"
 
       - name: Build release APK
         run: flutter build apk --release --split-per-abi
