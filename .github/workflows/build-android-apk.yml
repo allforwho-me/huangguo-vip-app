@@ -85,17 +85,40 @@ jobs:
           echo "--- wrapper properties ---"
           cat "$GITHUB_WORKSPACE/android/gradle/wrapper/gradle-wrapper.properties"
 
+      - name: Restore standard gradle build dir
+        run: |
+          set -e
+          f=android/build.gradle
+          if grep -q "rootProject.buildDir" "$f"; then
+            echo "buildDir already configured, skip"
+          else
+            cat >> "$f" <<'EOF'
+
+rootProject.buildDir = "../build"
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+subprojects {
+    project.evaluationDependsOn(":app")
+}
+EOF
+            echo "appended buildDir override"
+          fi
+          echo "--- android/build.gradle ---"
+          cat "$f"
+
       - name: Build release APK
         run: |
           set +e
           flutter build apk --release
-          FLUTTER_EXIT=$?
-          echo "flutter exit code: $FLUTTER_EXIT"
-          echo "--- gradle raw outputs ---"
-          ls -R build/app/outputs 2>/dev/null || echo "no build/app/outputs"
-          echo "--- collecting any apk under build/ ---"
+          echo "flutter exit code: $?"
+          echo "--- where did gradle put things? ---"
+          find . -maxdepth 3 -type d -name build -not -path "./build/*" 2>/dev/null
+          ls -R build/app/outputs 2>/dev/null || echo "no ./build/app/outputs"
+          ls -R android/app/build/outputs 2>/dev/null || echo "no android/app/build/outputs"
+          echo "--- collecting any apk under the workspace ---"
           mkdir -p out
-          find build -name "*.apk" -type f -exec cp -v {} out/ \;
+          find . -name "*.apk" -type f -not -path "./out/*" -exec cp -v {} out/ \;
           ls -lh out 2>/dev/null
           if [ -z "$(ls -A out 2>/dev/null)" ]; then
             echo "::error::No APK produced at all - real build failure"
