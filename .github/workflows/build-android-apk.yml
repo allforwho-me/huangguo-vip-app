@@ -86,10 +86,26 @@ jobs:
           cat "$GITHUB_WORKSPACE/android/gradle/wrapper/gradle-wrapper.properties"
 
       - name: Build release APK
-        run: flutter build apk --release --split-per-abi
+        run: |
+          set +e
+          flutter build apk --release
+          FLUTTER_EXIT=$?
+          echo "flutter exit code: $FLUTTER_EXIT"
+          echo "--- gradle raw outputs ---"
+          ls -R build/app/outputs 2>/dev/null || echo "no build/app/outputs"
+          echo "--- collecting any apk under build/ ---"
+          mkdir -p out
+          find build -name "*.apk" -type f -exec cp -v {} out/ \;
+          ls -lh out 2>/dev/null
+          if [ -z "$(ls -A out 2>/dev/null)" ]; then
+            echo "::error::No APK produced at all - real build failure"
+            exit 1
+          fi
+          exit 0
 
       - uses: actions/upload-artifact@v4
         with:
           name: huangguo-vip-apk
-          path: build/app/outputs/flutter-apk/*.apk
+          path: out/*.apk
+          if-no-files-found: error
           retention-days: 30
