@@ -74,7 +74,9 @@ jobs:
           "$GRADLE_BIN" --version | head -n 4
 
           # Generate the wrapper in an EMPTY dir so no project settings get evaluated.
+          # Gradle 8.x refuses to run any task without a settings file, so give it a stub one.
           rm -rf /tmp/wrapgen && mkdir -p /tmp/wrapgen
+          printf "rootProject.name = 'wrapgen'\n" > /tmp/wrapgen/settings.gradle
           ( cd /tmp/wrapgen && "$GRADLE_BIN" wrapper --gradle-version 8.7 --distribution-type bin --no-daemon )
 
           cp -r /tmp/wrapgen/gradle "$GITHUB_WORKSPACE/android/"
