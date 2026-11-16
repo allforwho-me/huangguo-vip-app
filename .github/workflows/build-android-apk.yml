@@ -1,0 +1,64 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Fix hardcoded flutter.sdk path in settings.gradle
+        run: |
+          python3 - <<'PY'
+          import os, re, shutil, pathlib
+          p = pathlib.Path('android/settings.gradle')
+          s = p.read_text()
+          sdk = os.environ.get('FLUTTER_ROOT') or os.path.dirname(
+              os.path.dirname(shutil.which('flutter')))
+          replacement = (
+              'def flutterSdkPath = new File(System.getenv("FLUTTER_ROOT") ?: "%s")'
+              '.getAbsolutePath()' % sdk
+          )
+          s2, n = re.subn(
+              r'def flutterSdkPath\s*=\s*new File\([^)]*\)\.getAbsolutePath\(\)',
+              replacement, s)
+          if n == 0:
+              print('WARN: pattern not found, settings.gradle untouched')
+          p.write_text(s2)
+          print('--- patched head ---')
+          print('\n'.join(s2.splitlines()[:8]))
+          PY
+
+      - name: Ensure gradle wrapper exists
+        run: |
+          if [ ! -f android/gradlew ]; then
+            (cd android && gradle wrapper --gradle-version 8.7)
+          fi
+          chmod +x android/gradlew || true
+
+      - name: Build release APK
+        run: flutter build apk --release --split-per-abi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: huangguo-vip-apk
+          path: build/app/outputs/flutter-apk/*.apk
+          retention-days: 30
